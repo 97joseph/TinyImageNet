@@ -1,0 +1,518 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "NegAkmLZKITL"
+      },
+      "source": [
+        "# CSE - 144 Assignment 4\n",
+        "\n",
+        "## Due: June 7, 2022 11:59 pm\n",
+        "\n",
+        "\n",
+        "**Be sure to set your Runtime environment to include a GPU, as it will speed up the training considerably (this time that's important!).**\n",
+        "\n",
+        "Intro Slides: https://docs.google.com/presentation/d/1PjqwL9g8XPr40LLRjRAAtxzc4Tf9iqVVnq61gJ59_Iw/edit?usp=sharing"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "UQ7vc7_hKITR"
+      },
+      "outputs": [],
+      "source": [
+        "# Ignore the warnings - Otherwise, TensorFlow tends to innundate one with far too many warnings.\n",
+        "import warnings\n",
+        "warnings.filterwarnings('always')\n",
+        "warnings.filterwarnings('ignore')\n",
+        "\n",
+        "# Data visualizaton.\n",
+        "import matplotlib.pyplot as plt\n",
+        "from matplotlib import style\n",
+        "import seaborn as sns\n",
+        "import random as rn\n",
+        "\n",
+        "# Configure some defaults.\n",
+        "%matplotlib inline  \n",
+        "style.use('fivethirtyeight')\n",
+        "sns.set(style='whitegrid',color_codes=True)\n",
+        "\n",
+        "# ML + Deep Learning Imports\n",
+        "import tensorflow as tf\n",
+        "from keras import backend as k\n",
+        "from tensorflow import keras\n",
+        "from keras.regularizers import l2\n",
+        "from keras.preprocessing.image import ImageDataGenerator # Data Augmentation\n",
+        "from tensorflow.keras import regularizers \n",
+        "from tensorflow.keras.models import Sequential # This building the models\n",
+        "from tensorflow.keras.layers import Dense, Dropout, Flatten, Activation, Conv2D, MaxPooling2D \n",
+        "from tensorflow.keras.optimizers import Adam, SGD, Adagrad, Adadelta, RMSprop \n",
+        "from tensorflow.keras.utils import to_categorical # if label is 0,1,...,99 etc then it becomes [0,...1,.,0] a len 100 vector\n",
+        "from keras.callbacks import ReduceLROnPlateau #learning rate decay policy\n",
+        "from sklearn.model_selection import train_test_split # for splitting data\n",
+        "\n",
+        " \n",
+        "\n",
+        "import numpy as np\n",
+        "import pandas as pd # for making our csv\n",
+        "import time\n",
+        "# Image preprocessing and reading in.\n",
+        "import imageio \n",
+        "from pathlib import Path\n",
+        "import os, sys\n",
+        "from zipfile import ZipFile\n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "ZVLfTcsJKITR"
+      },
+      "source": [
+        "#### Step-0: Import dataset\n",
+        "Download Tiny-ImageNet-100 dataset using the code blocks below. \n",
+        "\n",
+        "Please fill in the code block below to split the data into training, validation and test datasets you may use scikit-learn to split."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Download Tiny-Imagenet-100\n",
+        "!gdown 1bn9RtCsMu-v_ZagKCK2z7hVEDOIjb9Pd\n",
+        "\n",
+        "for file in os.listdir(os.getcwd()):\n",
+        "    if file.endswith(\".zip\"):\n",
+        "        zip = ZipFile(file)\n",
+        "        zip.extractall()\n",
+        "    else:\n",
+        "        print(\"not found\")"
+      ],
+      "metadata": {
+        "id": "Rp7dVNpkfC3_"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "path = 'tiny-image-net-100/'\n",
+        "\n",
+        "def get_id_dictionary():\n",
+        "  \"\"\"\n",
+        "  Maps each class id to an unique integer.\n",
+        "  \"\"\"\n",
+        "    id_dict = {}\n",
+        "    for i, line in enumerate(open( path + 'wnids.txt', 'r')):\n",
+        "        id_dict[line.replace('\\n', '')] = i\n",
+        "    return id_dict\n",
+        "  \n",
+        "def get_class_to_id_dict():\n",
+        "  \"\"\"\n",
+        "  Maps each class id to the English version of the label.\n",
+        "  \"\"\"\n",
+        "    id_dict = get_id_dictionary()\n",
+        "    all_classes = {}\n",
+        "    result = {}\n",
+        "    for i, line in enumerate(open( path + 'words.txt', 'r')):\n",
+        "        n_id, word = line.split('\\t')[:2]\n",
+        "        all_classes[n_id] = word\n",
+        "    for key, value in id_dict.items():\n",
+        "        result[value] = (key, all_classes[key])      \n",
+        "    return result\n",
+        "\n",
+        "def get_data(id_dict, n_samples=10):\n",
+        "    \"\"\"\n",
+        "    n_samples: number of samples per class. n_samples has a max of 500.\n",
+        "    The range is [1, 500].\n",
+        "    \"\"\"\n",
+        "    print('starting loading data')\n",
+        "    train_data, test_data = [], []\n",
+        "    train_labels = []\n",
+        "    t = time.time()\n",
+        "    for key, value in id_dict.items():\n",
+        "      if value<100: # Only focus on first 100 classes\n",
+        "        train_data += [imageio.imread( path + 'train/{}/images/{}_{}.JPEG'.format(key, key, str(i)), pilmode='RGB') for i in range(n_samples)]\n",
+        "        train_labels_ = np.array([[0]*100]*n_samples)\n",
+        "        train_labels_[:, value] = 1\n",
+        "        train_labels += train_labels_.tolist()\n",
+        "\n",
+        "    test_image_names = []\n",
+        "    path_list = list(Path(path+'test/images/').glob('*.jpg'))\n",
+        "    for test_image_path in path_list:\n",
+        "        img_name = str(test_image_path).split('.')[0][-18:]\n",
+        "        test_image_names.append(img_name)\n",
+        "        test_data.append(imageio.imread(test_image_path , pilmode='RGB'))\n",
+        "        \n",
+        "    print('finished loading data, in {} seconds'.format(time.time() - t))\n",
+        "    return np.array(train_data), np.array(train_labels), np.array(test_data), test_image_names"
+      ],
+      "metadata": {
+        "id": "MItoUh2LZSsX"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "K6PznhssKITR"
+      },
+      "outputs": [],
+      "source": [
+        "###### Your codes start here.######\n",
+        "# Start with n_samples = 10 to get your code working and then increase accordlingy.\n",
+        "###### Your codes start here.######\n",
+        "print( \"train data shape: \",  x_train.shape )\n",
+        "print( \"train label shape: \", y_train.shape )\n",
+        "print( \"val data shape: \",  x_val.shape )\n",
+        "print( \"val label shape: \", y_val.shape )\n",
+        "print( \"test data shape: \",   x_test.shape )"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "#### Step-1: Data Preparation & Exploration\n",
+        "\n",
+        "Let's take a look at a few of these images. Rerun this cell multiple times to see different images for each class.\n",
+        "\n",
+        "You may notice that these images look low fidelity, which is because they are! As we increase our image size, we also increase our model complexity. What's important is that our classes are still distinguishable from each other."
+      ],
+      "metadata": {
+        "id": "PJvMZiSoprph"
+      }
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "d45hvQNDKITS"
+      },
+      "outputs": [],
+      "source": [
+        "#Visulize one image from Tiny-ImageNet\n",
+        "plt.imshow(x_train[0], cmap=plt.cm.binary)"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "eFpoh2XBKITT"
+      },
+      "source": [
+        "#### Step-2: Build a neural network.\n",
+        "Build your convolutional neural networks by adding some layers. You should use 2 convolution layers and ReLU as the default activation function.\n",
+        "Add max pooling after the first layer.\n",
+        "The kernel size of both layers should be 3x3. Use 32 and 64 as the number of filters for the first and the second convolutional layers, respectively. After that, flatten your input and add two more dense layers. There should be 1024 units in the first dense with ReLU activation, and use 100 hidden units in the second dense layer with softmax activation."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "Y-7IE80mKITT"
+      },
+      "outputs": [],
+      "source": [
+        "###### Your code starts here. ######\n",
+        "###### Your codes end here.######"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "### Side Note: How to save a model to google drive\n"
+      ],
+      "metadata": {
+        "id": "-KmndNeeHHD5"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Mount colab to your drive\n",
+        "from google.colab import drive\n",
+        "drive.mount('/content/drive', force_remount=True)"
+      ],
+      "metadata": {
+        "id": "iMzmHqxtHGgX"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Add load model if exists"
+      ],
+      "metadata": {
+        "id": "wD22-ZNKHjdz"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Save your model to gdrive\n",
+        "model.save('/content/drive/My Drive/YOUR FOLDER NAME/hw4_model.h5')  "
+      ],
+      "metadata": {
+        "id": "VnMotv2THOJL"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# load a model\n",
+        "# Returns a compiled model identical to the previous one, if you load you don't need to model.compile()\n",
+        "model = load_model('/content/drive/My Drive/YOUR FOLDER NAME/hw4_model.h5') "
+      ],
+      "metadata": {
+        "id": "AOh-RFyyHYgg"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "dt27nBzJKITU"
+      },
+      "source": [
+        "#### Step-3: Train the model\n",
+        "Compile model here and set your initial hyperparameters. Use ADAM as the optimizer. You should choose 'categorical_crossentropy' as your loss function, and the metrics should be 'accuracy'. After that, train your model for 30 epochs. "
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "lr_reducer = ReduceLROnPlateau(factor=np.sqrt(0.1), cooldown=0, patience=5, min_lr=0.5e-3)"
+      ],
+      "metadata": {
+        "id": "Vow_Wly8N_AD"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "### Your code here###\n",
+        "#compile the model\n",
+        "# Do model.summary()\n",
+        "### Your code here###"
+      ],
+      "metadata": {
+        "id": "pEyagpLSMLtq"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "### Data Augmentation\n",
+        "\n",
+        "There are many augmentations you can use! Read about them in the Keras documentation.\n",
+        "\n",
+        " **Rescale is very important!**"
+      ],
+      "metadata": {
+        "id": "1PldpcYoHsG-"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Set up data generators for training and validation set\n",
+        "# add transformations\n",
+        "\n",
+        "datagen = ImageDataGenerator(\n",
+        "          rescale=1/255.,\n",
+        "          featurewise_center=False,           # set input mean to 0 over the dataset\n",
+        "          samplewise_center=False,            # set each sample mean to 0\n",
+        "          featurewise_std_normalization=False,# divide inputs by std of the dataset\n",
+        "          samplewise_std_normalization=False, # divide each input by its std\n",
+        "          zca_whitening=False,                # apply ZCA whitening\n",
+        "          rotation_range=0,                   # randomly rotate images in the range (degrees, 0 to 180)\n",
+        "          width_shift_range=0.1,              # randomly shift images horizontally (fraction of total width)\n",
+        "          height_shift_range=0.1,             # randomly shift images vertically (fraction of total height)\n",
+        "          horizontal_flip=True,               # randomly flip images\n",
+        "          vertical_flip=True)               # randomly flip images\n",
+        "\n",
+        "\n",
+        "valid_datagen = ImageDataGenerator(rescale=1/255.)"
+      ],
+      "metadata": {
+        "id": "YenY_mK3LOmp"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "### Your code here ###\n",
+        "# fit generators to datasets\n",
+        "### Your code here###"
+      ],
+      "metadata": {
+        "id": "JLAj2KeOLuR1"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "## Your Code Here ###\n",
+        "#set number of epochs\n",
+        "#set batch_size\n",
+        "nb_epoch = \n",
+        "batch_size=\n",
+        "# Fit the model on the batches generated by datagen.flow().\n",
+        "history = # fit model using fit_generator\n",
+        "## Your Code Here ###"
+      ],
+      "metadata": {
+        "id": "1I6RSsDML98I"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "### Plot Model Performance"
+      ],
+      "metadata": {
+        "id": "7umFV7g_rUqC"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Plot Model Performance\n",
+        "### YOUR CODE HERE ###"
+      ],
+      "metadata": {
+        "id": "jUmhu6zyrXKf"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Make Submission Kaggle File\n",
+        "def create_submission_file(model):\n",
+        "  name2idx = {}\n",
+        "  sample_submission = pd.read_csv('tiny-image-net-100/submission_sample.csv')\n",
+        "  filename_order = sample_submission['img_id'].values\n",
+        "  for i in range(len(filename_order)):\n",
+        "    name2idx[filename_order[i]] = i\n",
+        "\n",
+        "  # Google colab reads the files in a different order than the answer file was created.\n",
+        "  # This is done to preserve the file order.\n",
+        "  result_dict = {'img_id': [None]*len(x_test),\n",
+        "                'label':[None]*len(x_test)}\n",
+        "  test_preds = np.argmax(model.predict(x_test/255.),axis=-1)\n",
+        "\n",
+        "  for i in range(len(x_test_names)):\n",
+        "    test_image_name = x_test_names[i]\n",
+        "    result_dict['img_id'][name2idx[test_image_name]] = test_image_name\n",
+        "    result_dict['label'][name2idx[test_image_name]] = test_preds[i]\n",
+        "\n",
+        "  pd.DataFrame(result_dict).to_csv('submission.csv', index=False)"
+      ],
+      "metadata": {
+        "id": "be60AJz3dbm2"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Create your submission file and download it.\n",
+        "## Your Code Here ###"
+      ],
+      "metadata": {
+        "id": "01m0eGmqdyAb"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "You made it this far! You may have noticed your accuracy is not that great to improve on it do the following:\n",
+        "\n",
+        "i) Design a more complex neural network architecture. (Transfer learning may help)\n",
+        "\n",
+        "ii) Utilize data augmentation during training.\n",
+        "\n",
+        "\n",
+        "Experiment often and save your models. \n",
+        "\n",
+        "When you are satisfied submit your predictions to Kaggle. \n",
+        "\n",
+        "Good luck!"
+      ],
+      "metadata": {
+        "id": "CLtbnfbtx078"
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        ""
+      ],
+      "metadata": {
+        "id": "Fdx8XGrXKFQQ"
+      },
+      "execution_count": null,
+      "outputs": []
+    }
+  ],
+  "metadata": {
+    "colab": {
+      "collapsed_sections": [],
+      "name": "CSE - 144 Assignment 4.ipynb",
+      "provenance": []
+    },
+    "interpreter": {
+      "hash": "3afe1e4ce7822ba0e325ee279bb4d100dadd903c2abe2139ffec7391692aa1eb"
+    },
+    "kernelspec": {
+      "display_name": "Python 3.6.13 ('zichao')",
+      "language": "python",
+      "name": "python3"
+    },
+    "language_info": {
+      "codemirror_mode": {
+        "name": "ipython",
+        "version": 3
+      },
+      "file_extension": ".py",
+      "mimetype": "text/x-python",
+      "name": "python",
+      "nbconvert_exporter": "python",
+      "pygments_lexer": "ipython3",
+      "version": "3.6.13"
+    },
+    "orig_nbformat": 4,
+    "accelerator": "GPU"
+  },
+  "nbformat": 4,
+  "nbformat_minor": 0
+}
